@@ -11,6 +11,7 @@ import (
 	"code.google.com/p/plotinum/plotter"
 	"image/color"
 	"fmt"
+	"flag"
 )
 
 
@@ -120,6 +121,11 @@ var ydata []float64 = []float64{
 	5.80689459241500483,
 	7.02609346313174044}
 
+var solver string
+
+func init() {
+	flag.StringVar(&solver, "solver", "chol", "Solver name")
+}
 
 
 func dataset(xs, ys []float64) plotter.XYs {
@@ -159,6 +165,7 @@ func plotData(name string, us, ys, ts, fs []float64) {
 }
 
 func main() {
+	flag.Parse()
 
 	m := len(udata)
 	nvars := 2*m
@@ -200,6 +207,7 @@ func main() {
 	var A, b *matrix.FloatMatrix = nil, nil
 	var solopts cvx.SolverOptions
 	solopts.ShowProgress = true
+	solopts.KKTSolverName = solver
 
 	sol, err := cvx.Qp(P, q, G, h, A, b, &solopts, nil)
 	if err != nil {
