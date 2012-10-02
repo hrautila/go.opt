@@ -11,7 +11,8 @@ you need to install cvx-package. To install cvx do:
 Additionally you need BLAS and LAPACK libraries.
 
 Some example use GO Plotinum package for plotting. See https://code.google.com/p/plotinum/
-for more details.
+for more details. SVGo package is used for some graphics. For that see 
+https://github.com/ajstarks/svgo
 
 
 
