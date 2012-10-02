@@ -25,6 +25,7 @@ to the quadratic programming solver from MOSEK.
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import localmisc
 import helpers
 
 __all__ = []
@@ -202,13 +203,13 @@ def cpl(c, F, G = None, h = None, dims = None, A = None, b = None,
 
     if kktsolver in defaultsolvers:
          if kktsolver == 'ldl': 
-             factor = misc.kkt_ldl(G, dims, A, mnl)
+             factor = localmisc.kkt_ldl(G, dims, A, mnl)
          elif kktsolver == 'ldl2': 
              factor = misc.kkt_ldl2(G, dims, A, mnl)
          elif kktsolver == 'chol':
-             factor = misc.kkt_chol(G, dims, A, mnl)
+             factor = localmisc.kkt_chol(G, dims, A, mnl)
          else: 
-             factor = misc.kkt_chol2(G, dims, A, mnl)
+             factor = localmisc.kkt_chol2(G, dims, A, mnl)
          def kktsolver(x, z, W):
              f, Df, H = F(x, z)
              return factor(W, H, Df)             
@@ -509,7 +510,9 @@ def cpl(c, F, G = None, h = None, dims = None, A = None, b = None,
         # On exit, they contain ux, uy, uz.
         
         try:
+            helpers.sp_minor_push(95)
             f3 = kktsolver(x, z[:mnl], W)
+            helpers.sp_minor_pop()
             helpers.sp_create("f3", 100)
             #print "x=\n", helpers.str2(x,"%.7f")
             #print "z=\n", helpers.str2(z,"%.7f")
@@ -550,7 +553,10 @@ def cpl(c, F, G = None, h = None, dims = None, A = None, b = None,
 
                 relaxed_iters = -1
 
-                try: f3 = kktsolver(x, z[:mnl], W)
+                try:
+                    helpers.cp_minor_push(120)
+                    f3 = kktsolver(x, z[:mnl], W)
+                    helpers.cp_minor_pop()
                 except ArithmeticError: 
                      singular_kkt_matrix = True
 
@@ -1480,13 +1486,13 @@ def cp(F, G = None, h = None, dims = None, A = None, b = None,
             kktsolver = 'chol2'            
     if kktsolver in ('ldl', 'chol', 'chol2', 'qr'):
         if kktsolver == 'ldl':
-            factor = misc.kkt_ldl(G, dims, A, mnl)
+            factor = localmisc.kkt_ldl(G, dims, A, mnl)
         elif kktsolver == 'qr':
-            factor = misc.kkt_qr(G, dims, A, mnl)
+            factor = localmisc.kkt_qr(G, dims, A, mnl)
         elif kktsolver == 'chol':
-            factor = misc.kkt_chol(G, dims, A, mnl)
+            factor = localmisc.kkt_chol(G, dims, A, mnl)
         else: 
-            factor = misc.kkt_chol2(G, dims, A, mnl)
+            factor = localmisc.kkt_chol2(G, dims, A, mnl)
         def kktsolver(x, z, W):
             f, Df, H = F(x, z)
             return factor(W, H, Df[1:,:])             
@@ -1576,7 +1582,7 @@ def cp(F, G = None, h = None, dims = None, A = None, b = None,
     return sol
 
 
-def gp(K, F, g, G=None, h=None, A=None, b=None):
+def gp(K, F, g, G=None, h=None, A=None, b=None, kktsolver=None):
 
     """
     Solves a geometric program
@@ -1701,4 +1707,4 @@ def gp(K, F, g, G=None, h=None, A=None, b=None):
             #print "H=\n", helpers.str2(H, "%.3f")
             return f, Df, H
 
-    return cp(Fgp, G, h, dims, A, b)
+    return cp(Fgp, G, h, dims, A, b, kktsolver=kktsolver)

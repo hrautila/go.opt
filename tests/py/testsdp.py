@@ -19,11 +19,10 @@ def testsdp(opts, chkpoints):
     h = [ matrix([[33., -9.], [-9., 26.]]) ]  
     h += [ matrix([[14., 9., 40.], [9., 91., 10.], [40., 10., 15.]]) ]  
 
-    if chkpoints:
-        helpers.sp_reset("./sp.testsdp")
-        helpers.sp_activate()
-    localcones.options.update(opts)
-    sol = localcones.sdp(c, Gs=G, hs=h)  
+    solvers.options.update(opts)
+    sol = solvers.sdp(c, Gs=G, hs=h)  
+    #localcones.options.update(opts)
+    #sol = localcones.sdp(c, Gs=G, hs=h)  
     print "x = \n", helpers.str2(sol['x'], "%.9f")
     print "zs[0] = \n", helpers.str2(sol['zs'][0], "%.9f")
     print "zs[1] = \n", helpers.str2(sol['zs'][1], "%.9f")
@@ -37,12 +36,12 @@ def rungo(sol):
                                        'zs0': sol['zs'][0],
                                        'zs1': sol['zs'][1]})
 
-chkpoints = False
 if len(sys.argv[1:]) > 0:
     if sys.argv[1] == "-sp":
-        chkpoints = True
+        helpers.sp_reset("./sp.data")
+        helpers.sp_activate()
 
-testsdp({'maxiters': 20}, chkpoints)
+testsdp({'maxiters': 20})
 
     
 

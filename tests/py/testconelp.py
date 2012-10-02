@@ -11,7 +11,7 @@ import localcones
 import helpers
 
 
-def solve(opts, chkpoints):
+def solve(opts):
     c = matrix([-6., -4., -5.])
 
     G = matrix([[ 16., 7.,  24.,  -8.,   8.,  -1.,  0., -1.,  0.,  0.,   7.,  
@@ -28,11 +28,10 @@ def solve(opts, chkpoints):
 
     dims = {'l': 2, 'q': [4, 4], 's': [3]}
 
-    if chkpoints:
-        helpers.sp_reset("./sp.conelp")
-        helpers.sp_activate()
-    localcones.options.update(opts)
-    sol = localcones.conelp(c, G, h, dims, kktsolver='ldl')
+    #localcones.options.update(opts)
+    #sol = localcones.conelp(c, G, h, dims, kktsolver='qr')
+    solvers.options.update(opts)
+    sol = solvers.conelp(c, G, h, dims)
     print("\nStatus: " + sol['status'])
     if sol['status'] == 'optimal':
         print "x=\n", helpers.strSpe(sol['x'], "%.5f")
@@ -45,5 +44,10 @@ def rungotest(sol):
     helpers.run_go_test("../testconelp", {'x': sol['x'], 's': sol['s'], 'z': sol['z']})
 
 
-chkpoints = False
-solve({'maxiters': 20}, chkpoints)
+if len(sys.argv[1:]) > 0:
+     # if using this use localcones.conelp  instead of solvers.conelp
+    if sys.argv[1] == "-sp":
+        helpers.sp_reset("./sp.data")
+        helpers.sp_activate()
+
+solve({'maxiters': 20})

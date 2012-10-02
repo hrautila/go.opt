@@ -19,8 +19,10 @@ def testgp(opts):
     g = log( matrix( [1.0, 2/Awall, 2/Awall, 1/Aflr, alpha, 1/beta, gamma, 
                       1/delta]) )  
     K = [1, 2, 1, 1, 1, 1, 1]  
-    localcvx.options.update(opts)
-    sol = localcvx.gp(K, F, g)
+    solvers.options.update(opts)
+    sol = solvers.gp(K, F, g)
+    #localcvx.options.update(opts)
+    #sol = localcvx.gp(K, F, g, kktsolver='chol')
     if sol['status'] == 'optimal':
         x = sol['x']
         print "x=\n", helpers.strSpe(x, "%.17f")
@@ -31,8 +33,9 @@ def testgp(opts):
         
 
 if len(sys.argv[1:]) > 0:
+     # if using this use localcvx.cp  instead of solvers.cp
     if sys.argv[1] == '-sp':
-        helpers.sp_reset("./sp.gp")
+        helpers.sp_reset("./sp.data")
         helpers.sp_activate()
         
 testgp({'maxiters': 30})

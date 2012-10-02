@@ -35,6 +35,6 @@ def testsocp(opts):
                                        'zq1': sol['zq'][1]})
 
 
-testsocp({'maxiters': 10, 'kktsolver': 'ldl'})
+testsocp({'maxiters': 10})
 
     

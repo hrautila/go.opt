@@ -203,11 +203,11 @@ def conelp(c, G, h, dims = None, A = None, b = None, primalstart = None,
         elif kktsolver == 'ldl2':
             factor = misc.kkt_ldl2(G, dims, A)
         elif kktsolver == 'qr':
-            factor = misc.kkt_qr(G, dims, A)
+            factor = localmisc.kkt_qr(G, dims, A)
         elif kktsolver == 'chol':
-            factor = misc.kkt_chol(G, dims, A)
+            factor = localmisc.kkt_chol(G, dims, A)
         else:
-            factor = misc.kkt_chol2(G, dims, A)
+            factor = localmisc.kkt_chol2(G, dims, A)
         def kktsolver(W):
             return factor(W)
 
@@ -1396,6 +1396,9 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
 
 
     ws3, wz3 = matrix(0.0, (cdim,1 )), matrix(0.0, (cdim,1 ))
+    helpers.sp_add_var("ws3", ws3)
+    helpers.sp_add_var("wz3", wz3)
+
     def res(ux, uy, uz, us, vx, vy, vz, vs, W, lmbda):
 
         # Evaluates residual in Newton equations:
@@ -1406,6 +1409,8 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
         #
         #      vs := vs - lmbda o (uz + us).
 
+        minor = helpers.sp_minor_top()
+        helpers.sp_create("00res", minor)
         # vx := vx - P*ux - A'*uy - G'*W^{-1}*uz
         fP(ux, vx, alpha = -1.0, beta = 1.0)
         fA(uy, vx, alpha = -1.0, beta = 1.0, trans = 'T') 
@@ -1415,6 +1420,7 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
 
         # vy := vy - A*ux
         fA(ux, vy, alpha = -1.0, beta = 1.0)
+        helpers.sp_create("50res", minor)
 
         # vz := vz - G*ux - W'*us
         fG(ux, vz, alpha = -1.0, beta = 1.0)
@@ -1427,6 +1433,7 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
         blas.axpy(uz, ws3)
         misc.sprod(ws3, lmbda, dims, diag = 'D')
         blas.axpy(ws3, vs, alpha = -1.0)
+        helpers.sp_create("90res", minor)
 
 
     # kktsolver(W) returns a routine for solving 
@@ -1443,9 +1450,9 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
          elif kktsolver == 'ldl2': 
              factor = misc.kkt_ldl2(G, dims, A)
          elif kktsolver == 'chol':
-             factor = misc.kkt_chol(G, dims, A)
+             factor = localmisc.kkt_chol(G, dims, A)
          else:
-             factor = misc.kkt_chol2(G, dims, A)
+             factor = localmisc.kkt_chol2(G, dims, A)
          def kktsolver(W):
              return factor(W, P)
 
@@ -1514,6 +1521,11 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
     x, y = xnewcopy(q), ynewcopy(b)  
     s, z = matrix(0.0, (cdim, 1)), matrix(0.0, (cdim, 1))
 
+    helpers.sp_add_var("x", x)
+    helpers.sp_add_var("y", y)
+    helpers.sp_add_var("s", s)
+    helpers.sp_add_var("z", z)
+
     if initvals is None:
 
         # Factor
@@ -1532,6 +1544,7 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
         W['rti'] = [ matrix(0.0, (m,m)) for m in dims['s'] ]
         for r in W['r']: r[::r.size[0]+1 ] = 1.0
         for rti in W['rti']: rti[::rti.size[0]+1 ] = 1.0
+        helpers.sp_add_var("W", W)
         try: f = kktsolver(W)
         except ArithmeticError:  
             raise ValueError("Rank(A) < p or Rank([P; A; G]) < n")
@@ -1547,14 +1560,18 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
         xscal(-1.0, x)
         ycopy(b, y)  
         blas.copy(h, z)
-        try: f(x, y, z) 
+        helpers.sp_create("00init", 1)
+        try:
+            f(x, y, z) 
         except ArithmeticError:  
             raise ValueError("Rank(A) < p or Rank([P; G; A]) < n")
         blas.copy(z, s)  
         blas.scal(-1.0, s)  
+        helpers.sp_create("05init", 1)
 
         nrms = misc.snrm2(s, dims)
         ts = misc.max_step(s, dims)
+        print "nrms = %.7f ts = %.7f" % (nrms, ts)
         if ts >= -1e-8 * max(nrms, 1.0):  
             a = 1.0 + ts  
             s[:dims['l']] += a
@@ -1566,6 +1583,7 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
 
         nrmz = misc.snrm2(z, dims)
         tz = misc.max_step(z, dims)
+        print "nrmz = %.7f tz = %.7f" % (nrmz, tz)
         if tz >= -1e-8 * max(nrmz, 1.0):
             a = 1.0 + tz  
             z[:dims['l']] += a
@@ -1627,6 +1645,14 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
     sigs = matrix(0.0, (sum(dims['s']), 1))
     sigz = matrix(0.0, (sum(dims['s']), 1))
 
+    helpers.sp_add_var("rx", rx)
+    helpers.sp_add_var("ry", ry)
+    #helpers.sp_add_var("rs", rs)
+    helpers.sp_add_var("rz", rz)
+    helpers.sp_add_var("dx", dx)
+    helpers.sp_add_var("dy", dy)
+    helpers.sp_add_var("ds", ds)
+    helpers.sp_add_var("dz", dz)
 
     if show_progress: 
         print("% 10s% 12s% 10s% 8s% 7s" %("pcost", "dcost", "gap", "pres",
@@ -1636,6 +1662,8 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
 
 
     for iters in xrange(MAXITERS + 1):
+        helpers.sp_major_next()
+        helpers.sp_create("loopstart", 10)
 
         # f0 = (1/2)*x'*P*x + q'*x + r and  rx = P*x + q + A'*y + G'*z.
         xcopy(q, rx)
@@ -1674,6 +1702,15 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
             relgap = None
         pres = max(resy/resy0, resz/resz0)
         dres = resx/resx0 
+
+        helpers.sp_create("stoptest", 100, {"gap": gap,
+                                          "resx": resx,
+                                          "resy": resy,
+                                          "resz": resz,
+                                          "pcost": pcost,
+                                          "dcost": dcost,
+                                          "pres": pres,
+                                          "dres": dres})
 
         if show_progress:
             print("%2d: % 8.4e % 8.4e % 4.0e% 7.0e% 7.0e" \
@@ -1714,6 +1751,7 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
         
         if iters == 0:
             W = misc.compute_scaling(s, z, lmbda, dims)
+            helpers.sp_add_var("W", W)
             #print "-- initial lmbda=\n", localmisc.strMat(lmbda)
         misc.ssqr(lmbdasq, lmbda, dims)
 
@@ -1771,6 +1809,8 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
             # On entry, x, y, z, s  contains bx, by, bz, bs. 
             # On exit they contain x, y, z, s.
             
+            minor = helpers.sp_minor_top()
+            helpers.sp_create("f4_no_ir_start", minor)
             # s := lmbda o\ s 
             #    = lmbda o\ bs
             misc.sinv(s, lmbda, dims)
@@ -1782,11 +1822,14 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
             blas.axpy(ws3, z, alpha = -1.0)
 
             # Solve for ux, uy, uz
+            helpers.sp_create("f4_no_ir_f3", minor+50)
             f3(x, y, z)
+            helpers.sp_create("f4_no_ir_f3", minor+60)
 
             # s := s - z 
             #    = lambda o\ bs - uz.
             blas.axpy(z, s, alpha = -1.0)
+            helpers.sp_create("f4_no_ir_end", minor+90)
 
 
         # f4(x, y, z, s) solves the same system as f4_no_ir, but applies
@@ -1796,24 +1839,42 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
             if refinement or DEBUG:
                 wx, wy = xnewcopy(q), ynewcopy(b) 
                 wz, ws = matrix(0.0, (cdim,1)), matrix(0.0, (cdim,1)) 
+                helpers.sp_add_var("wx", wx)
+                helpers.sp_add_var("wy", wy)
+                helpers.sp_add_var("ws", ws)
+                helpers.sp_add_var("wz", wz)
             if refinement:
                 wx2, wy2 = xnewcopy(q), ynewcopy(b) 
                 wz2, ws2 = matrix(0.0, (cdim,1)), matrix(0.0, (cdim,1)) 
+                helpers.sp_add_var("wx2", wx2)
+                helpers.sp_add_var("wy2", wy2)
+                helpers.sp_add_var("ws2", ws2)
+                helpers.sp_add_var("wz2", wz2)
 
         def f4(x, y, z, s):
+            minor = helpers.sp_minor_top()
+            helpers.sp_create("f4start", minor)
             if refinement or DEBUG: 
                 xcopy(x, wx)        
                 ycopy(y, wy)        
                 blas.copy(z, wz)        
                 blas.copy(s, ws)        
+
+            helpers.sp_minor_push(minor+100)
             f4_no_ir(x, y, z, s)        
+            helpers.sp_minor_pop()
+
             for i in xrange(refinement):
                 xcopy(wx, wx2)        
                 ycopy(wy, wy2)        
                 blas.copy(wz, wz2)        
                 blas.copy(ws, ws2)        
+                helpers.sp_minor_push(minor+(i+1)*300)
                 res(x, y, z, s, wx2, wy2, wz2, ws2, W, lmbda) 
+                helpers.sp_minor_pop()
+                helpers.sp_minor_push(minor+(i+1)*500)
                 f4_no_ir(wx2, wy2, wz2, ws2)
+                helpers.sp_minor_pop()
                 xaxpy(wx2, x)
                 yaxpy(wy2, y)
                 blas.axpy(wz2, z)
@@ -1825,6 +1886,8 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
                 print("    'y': %e" %math.sqrt(ydot(wy, wy)))
                 print("    'z': %e" %misc.snrm2(wz, dims))
                 print("    's': %e" %misc.snrm2(ws, dims))
+
+            helpers.sp_create("f4end", minor+1500)
 
 
         mu = gap / (dims['l'] + len(dims['q']) + sum(dims['s']))
@@ -1843,6 +1906,7 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
             #                         + sigma*mu*e (i=1) where dsa, dza
             #                         are the solution for i=0. 
  
+            minor_base = (i+1)*2000
             # ds = -lmbdasq + sigma * mu * e  (if i is 0)
             #    = -lmbdasq - dsa o dza + sigma * mu * e  (if i is 1), 
             #     where ds, dz are solution for i is 0.
@@ -1865,13 +1929,17 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
                 ind2 += m
 
        
+            helpers.sp_create("00loop01", minor_base)
             # (dx, dy, dz) := -(1 - eta) * (rx, ry, rz)
             xscal(0.0, dx);  xaxpy(rx, dx, alpha = -1.0 + eta)
             yscal(0.0, dy);  yaxpy(ry, dy, alpha = -1.0 + eta)
             blas.scal(0.0, dz) 
             blas.axpy(rz, dz, alpha = -1.0 + eta)
 
-            try: f4(dx, dy, dz, ds)
+            try:
+                helpers.sp_minor_push(minor_base)
+                f4(dx, dy, dz, ds)
+                helpers.sp_minor_pop()
             except ArithmeticError: 
                 if iters == 0:
                     raise ValueError("Rank(A) < p or Rank([P; A; G]) < n")
@@ -1907,7 +1975,7 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
 
             misc.scale2(lmbda, ds, dims)
             misc.scale2(lmbda, dz, dims)
-
+            helpers.sp_create("maxstep", minor_base+1500)
             if i == 0: 
                 ts = misc.max_step(ds, dims)
                 tz = misc.max_step(dz, dims)
@@ -1930,6 +1998,7 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
             #print "== step=%.17f sigma=%.17f dsdz=%.17f" %( step, sigma, dsdz)
 
 
+        helpers.sp_create("updatexy", 8000)
         xaxpy(dx, x, alpha = step)
         yaxpy(dy, y, alpha = step)
 
@@ -1951,6 +2020,8 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
             dz[ind] += 1.0
             ind += m
 
+        helpers.sp_create("updatedsdz", 8010)
+
 
         # ds := H(lambda)^{-1/2} * ds and dz := H(lambda)^{-1/2} * dz.
         #
@@ -1963,6 +2034,7 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
         # 
         misc.scale2(lmbda, ds, dims, inverse = 'I')
         misc.scale2(lmbda, dz, dims, inverse = 'I')
+        helpers.sp_create("scale2", 8030)
 
         # sigs := ( e + step*sigs ) ./ lambda for 's' blocks.
         # sigz := ( e + step*sigz ) ./ lmabda for 's' blocks.
@@ -1990,7 +2062,9 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
 
 
         # Update lambda and scaling.
+        helpers.sp_create("updatescaling", 8050)
         misc.update_scaling(W, lmbda, ds, dz)
+        helpers.sp_create("afterscaling", 8060)
 
         # Unscale s, z (unscaled variables are used only to compute 
         # feasibility residuals).
@@ -2018,6 +2092,7 @@ def coneqp(P, q, G = None, h = None, dims = None, A = None, b = None,
         misc.scale(z, W, inverse = 'I')
 
         gap = blas.dot(lmbda, lmbda) 
+        helpers.sp_create("eol", 8900)
         #print "== gap = %.17f" % gap
 
 

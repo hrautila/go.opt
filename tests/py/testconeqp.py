@@ -4,9 +4,10 @@
 #
 # The small linear cone program of section 8.1 (Linear cone programs).
 
-
+import sys
 from cvxopt import matrix, solvers
 from cvxopt import misc, blas
+import localcones
 import helpers
 
 
@@ -25,14 +26,21 @@ def testqp(opts):
     P = A.T*A
     q = -A.T*b
 
+    #localcones.options.update(opts)
+    #sol = localcones.coneqp(P, q, G, h, dims, kktsolver='chol')
     solvers.options.update(opts)
-    sol = solvers.coneqp(P, q, G, h, dims, kktsolver='ldl')
+    sol = solvers.coneqp(P, q, G, h, dims)
     if sol['status'] == 'optimal':
         print "x=\n", helpers.strSpe(sol['x'], "%.5f")
         print "s=\n", helpers.strSpe(sol['s'], "%.5f")
         print "z=\n", helpers.strSpe(sol['z'], "%.5f")
         print "\n *** running GO test ***"
         helpers.run_go_test("../testconeqp", {'x': sol['x'], 's': sol['s'], 'z': sol['z']})
+
+if len(sys.argv[1:]) > 0:
+    if sys.argv[1] == "-sp":
+        helpers.sp_reset("./sp.data")
+        helpers.sp_activate()
 
 testqp({'maxiters': 20})
 

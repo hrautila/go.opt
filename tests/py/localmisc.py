@@ -1,5 +1,5 @@
 
-from cvxopt import matrix, blas, lapack, misc, base
+from cvxopt import matrix, blas, lapack, misc, base, spmatrix
 
 import helpers
 import math
@@ -1004,6 +1004,26 @@ def local_update_scaling(W, lmbda, s, z):
         ind3 += m
 
 
+def pack2(x, dims, mnl = 0):
+     """
+     In-place version of pack(), which also accepts matrix arguments x.  
+     The columns of x are elements of S, with the 's' components stored in
+     unpacked storage.  On return, the 's' components are stored in packed
+     storage and the off-diagonal entries are scaled by sqrt(2).
+     """
+
+     if not dims['s']:
+         return
+     iu = mnl + dims['l'] + sum(dims['q'])
+     ip = iu
+     for n in dims['s']:
+         for k in range(n):
+             x[ip, :] = x[iu + (n+1)*k, :]
+             x[ip + 1 : ip+n-k, :] = x[iu + (n+1)*k + 1: iu + n*(k+1), :] \
+                 * math.sqrt(2.0)
+             ip += n - k
+         iu += n**2 
+     np = sum([ int(n*(n+1)/2) for n in dims['s'] ])
 
 
 
@@ -1036,12 +1056,20 @@ def kkt_ldl(G, dims, A, mnl = 0):
     ipiv = matrix(0, (ldK, 1))
     u = matrix(0.0, (ldK, 1))
     g = matrix(0.0, (mnl + G.size[0], 1))
-    print "dims: ", str(dims)
+    #print "dims: ", str(dims)
+    #helpers.sp_add_var("u", u)
+    #helpers.sp_add_var("K", K)
 
     def factor(W, H = None, Df = None):
 
+        minor = 0
+        if not helpers.sp_minor_empty():
+            minor = helpers.sp_minor_top()
+
         blas.scal(0.0, K)
-        if H is not None: K[:n, :n] = H
+        if H is not None:
+            K[:n, :n] = H
+
         K[n:n+p, :n] = A
         for k in xrange(n):
             if mnl: g[:mnl] = Df[:,k]
@@ -1063,11 +1091,17 @@ def kkt_ldl(G, dims, A, mnl = 0):
             #
             # On entry, x, y, z contain bx, by, bz.  On exit, they contain
             # the solution ux, uy, W*uz.
+            minor = 0
+            if not helpers.sp_minor_empty():
+                minor = helpers.sp_minor_top()
             blas.copy(x, u)
             blas.copy(y, u, offsety = n)
             scale(z, W, trans = 'T', inverse = 'I') 
+            helpers.sp_create("05solver_", minor)
             misc.pack(z, u, dims, mnl, offsety = n + p)
+            helpers.sp_create("06solver_", minor)
             lapack.sytrs(K, ipiv, u)
+            helpers.sp_create("10solver_", minor)
             blas.copy(u, x, n = n)
             blas.copy(u, y, offsetx = n, n = p)
             misc.unpack(u, z, dims, mnl, offsetx = n + p)
@@ -1080,3 +1114,548 @@ def kkt_ldl(G, dims, A, mnl = 0):
 
     return factor
 
+
+def kkt_qr(G, dims, A):
+    """
+    Solution of KKT equations with zero 1,1 block, by eliminating the
+    equality constraints via a QR factorization, and solving the
+    reduced KKT system by another QR factorization.
+    
+    Computes the QR factorization
+    
+        A' = [Q1, Q2] * [R1; 0]
+    
+    and returns a function that (1) computes the QR factorization 
+    
+        W^{-T} * G * Q2 = Q3 * R3
+    
+    (with columns of W^{-T}*G in packed storage), and (2) returns a 
+    function for solving 
+    
+        [ 0    A'   G'    ]   [ ux ]   [ bx ]
+        [ A    0    0     ] * [ uy ] = [ by ].
+        [ G    0   -W'*W  ]   [ uz ]   [ bz ]
+    
+            helpers.sp_create("30solve_qr", minor)
+    A is p x n and G is N x n where N = dims['l'] + sum(dims['q']) + 
+    sum( k**2 for k in dims['s'] ).
+    """
+ 
+    p, n = A.size
+    cdim = dims['l'] + sum(dims['q']) + sum([ k**2 for k in dims['s'] ])
+    cdim_pckd = dims['l'] + sum(dims['q']) + sum([ int(k*(k+1)/2) for k in 
+        dims['s'] ])
+
+    # A' = [Q1, Q2] * [R1; 0]
+    if type(A) is matrix:
+        QA = +A.T
+    else:
+        QA = matrix(A.T)
+    tauA = matrix(0.0, (p,1))
+    lapack.geqrf(QA, tauA)
+
+    Gs = matrix(0.0, (cdim, n))
+    tauG = matrix(0.0, (n-p,1))
+    u = matrix(0.0, (cdim_pckd, 1))
+    vv = matrix(0.0, (n,1))
+    w = matrix(0.0, (cdim_pckd, 1))
+    helpers.sp_add_var("tauA", tauA)
+    helpers.sp_add_var("tauG", tauG)
+    helpers.sp_add_var("Gs", Gs)
+    helpers.sp_add_var("qr_vv", vv)
+    helpers.sp_add_var("qr_u", u)
+
+    def factor(W):
+
+        minor = 0
+        if not helpers.sp_minor_empty():
+            minor = helpers.sp_minor_top()
+
+        # Gs = W^{-T}*G, in packed storage.
+        Gs[:,:] = G
+        helpers.sp_create("00factor_qr", minor)
+
+        misc.scale(Gs, W, trans = 'T', inverse = 'I')
+        helpers.sp_create("01factor_qr", minor)
+
+        misc.pack2(Gs, dims)
+        helpers.sp_create("02factor_qr", minor)
+ 
+        # Gs := [ Gs1, Gs2 ] 
+        #     = Gs * [ Q1, Q2 ]
+        lapack.ormqr(QA, tauA, Gs, side = 'R', m = cdim_pckd)
+        helpers.sp_create("03factor_qr", minor)
+
+        # QR factorization Gs2 := [ Q3, Q4 ] * [ R3; 0 ] 
+        lapack.geqrf(Gs, tauG, n = n-p, m = cdim_pckd, offsetA = 
+            Gs.size[0]*p)
+        helpers.sp_create("10factor_qr", minor)
+
+        def solve(x, y, z):
+
+            # On entry, x, y, z contain bx, by, bz.  On exit, they 
+            # contain the solution x, y, W*z of
+            #
+            #     [ 0         A'  G'*W^{-1} ]   [ x   ]   [bx       ]
+            #     [ A         0   0         ] * [ y   ] = [by       ].
+            #     [ W^{-T}*G  0   -I        ]   [ W*z ]   [W^{-T}*bz]
+            #
+            # The system is solved in five steps:
+            #
+            #       w := W^{-T}*bz - Gs1*R1^{-T}*by 
+            #       u := R3^{-T}*Q2'*bx + Q3'*w
+            #     W*z := Q3*u - w
+            #       y := R1^{-1} * (Q1'*bx - Gs1'*(W*z))
+            #       x := [ Q1, Q2 ] * [ R1^{-T}*by;  R3^{-1}*u ]
+
+            minor = 0
+            if not helpers.sp_minor_empty():
+                minor = helpers.sp_minor_top()
+
+            # w := W^{-T} * bz in packed storage 
+            misc.scale(z, W, trans = 'T', inverse = 'I')
+            misc.pack(z, w, dims)
+            helpers.sp_create("00solve_qr", minor)
+
+            # vv := [ Q1'*bx;  R3^{-T}*Q2'*bx ]
+            blas.copy(x, vv)
+            lapack.ormqr(QA, tauA, vv, trans='T') 
+            lapack.trtrs(Gs, vv, uplo = 'U', trans = 'T', n = n-p, offsetA
+                = Gs.size[0]*p, offsetB = p)
+            helpers.sp_create("10solve_qr", minor)
+
+            # x[:p] := R1^{-T} * by 
+            blas.copy(y, x)
+            lapack.trtrs(QA, x, uplo = 'U', trans = 'T', n = p)
+            helpers.sp_create("20solve_qr", minor)
+
+            # w := w - Gs1 * x[:p] 
+            #    = W^{-T}*bz - Gs1*by 
+            blas.gemv(Gs, x, w, alpha = -1.0, beta = 1.0, n = p, m = 
+                cdim_pckd)
+            helpers.sp_create("30solve_qr", minor)
+
+            # u := [ Q3'*w + v[p:];  0 ]
+            #    = [ Q3'*w + R3^{-T}*Q2'*bx; 0 ]
+            blas.copy(w, u)
+            lapack.ormqr(Gs, tauG, u, trans = 'T', k = n-p, offsetA = 
+                Gs.size[0]*p, m = cdim_pckd)
+            blas.axpy(vv, u, offsetx = p, n = n-p)
+            blas.scal(0.0, u, offset = n-p)
+            helpers.sp_create("40solve_qr", minor)
+
+            # x[p:] := R3^{-1} * u[:n-p]  
+            blas.copy(u, x, offsety = p, n = n-p)
+            lapack.trtrs(Gs, x, uplo='U', n = n-p, offsetA = Gs.size[0]*p,
+                offsetB = p)
+            helpers.sp_create("50solve_qr", minor)
+
+            # x is now [ R1^{-T}*by;  R3^{-1}*u[:n-p] ]
+            # x := [Q1 Q2]*x
+            lapack.ormqr(QA, tauA, x) 
+            helpers.sp_create("60solve_qr", minor)
+ 
+            # u := [Q3, Q4] * u - w 
+            #    = Q3 * u[:n-p] - w
+            lapack.ormqr(Gs, tauG, u, k = n-p, m = cdim_pckd, offsetA = 
+                Gs.size[0]*p)
+            blas.axpy(w, u, alpha = -1.0)  
+            helpers.sp_create("70solve_qr", minor)
+
+            # y := R1^{-1} * ( v[:p] - Gs1'*u )
+            #    = R1^{-1} * ( Q1'*bx - Gs1'*u )
+            blas.copy(vv, y, n = p)
+            blas.gemv(Gs, u, y, m = cdim_pckd, n = p, trans = 'T', alpha = 
+                -1.0, beta = 1.0)
+            lapack.trtrs(QA, y, uplo = 'U', n=p) 
+            helpers.sp_create("80solve_qr", minor)
+
+            misc.unpack(u, z, dims)
+            helpers.sp_create("90solve_qr", minor)
+
+        return solve
+
+    return factor
+
+
+def kkt_chol(G, dims, A, mnl = 0):
+    """
+    """
+
+    p, n = A.size
+    cdim = mnl + dims['l'] + sum(dims['q']) + sum([ k**2 for k in 
+        dims['s'] ])
+    cdim_pckd = mnl + dims['l'] + sum(dims['q']) + sum([ int(k*(k+1)/2)
+        for k in dims['s'] ])
+
+    # A' = [Q1, Q2] * [R; 0]  (Q1 is n x p, Q2 is n x n-p).
+    if type(A) is matrix: 
+        QA = A.T
+    else: 
+        QA = matrix(A.T)
+    tauA = matrix(0.0, (p,1))
+    lapack.geqrf(QA, tauA)
+
+    Gs = matrix(0.0, (cdim, n))
+    K = matrix(0.0, (n,n)) 
+    bzp = matrix(0.0, (cdim_pckd, 1))
+    yy = matrix(0.0, (p,1))
+
+    def factor(W, H = None, Df = None):
+
+        # Compute 
+        #
+        #     K = [Q1, Q2]' * (H + GG' * W^{-1} * W^{-T} * GG) * [Q1, Q2]
+        #
+        # and take the Cholesky factorization of the 2,2 block
+        #
+        #     Q_2' * (H + GG^T * W^{-1} * W^{-T} * GG) * Q2.
+
+        minor = 0
+        if not helpers.sp_minor_empty():
+            minor = helpers.sp_minor_top()
+
+        # Gs = W^{-T} * GG in packed storage.
+        if mnl: 
+            Gs[:mnl, :] = Df
+        Gs[mnl:, :] = G
+        helpers.sp_create("00factor_chol", minor)
+        misc.scale(Gs, W, trans = 'T', inverse = 'I')
+        misc.pack2(Gs, dims, mnl)
+        helpers.sp_create("10factor_chol", minor)
+
+        # K = [Q1, Q2]' * (H + Gs' * Gs) * [Q1, Q2].
+        blas.syrk(Gs, K, k = cdim_pckd, trans = 'T')
+        if H is not None:
+            K[:,:] += H
+        helpers.sp_create("20factor_chol", minor)
+        misc.symm(K, n)
+        lapack.ormqr(QA, tauA, K, side = 'L', trans = 'T')
+        lapack.ormqr(QA, tauA, K, side = 'R')
+        helpers.sp_create("30factor_chol", minor)
+
+        # Cholesky factorization of 2,2 block of K.
+        lapack.potrf(K, n = n-p, offsetA = p*(n+1))
+        helpers.sp_create("40factor_chol", minor)
+
+        def solve(x, y, z):
+
+            # Solve
+            #
+            #     [ 0          A'  GG'*W^{-1} ]   [ ux   ]   [ bx        ]
+            #     [ A          0   0          ] * [ uy   ] = [ by        ]
+            #     [ W^{-T}*GG  0   -I         ]   [ W*uz ]   [ W^{-T}*bz ]
+            #
+            # and return ux, uy, W*uz.
+            #
+            # On entry, x, y, z contain bx, by, bz.  On exit, they contain
+            # the solution ux, uy, W*uz.
+            #
+            # If we change variables ux = Q1*v + Q2*w, the system becomes 
+            # 
+            #     [ K11 K12 R ]   [ v  ]   [Q1'*(bx+GG'*W^{-1}*W^{-T}*bz)]
+            #     [ K21 K22 0 ] * [ w  ] = [Q2'*(bx+GG'*W^{-1}*W^{-T}*bz)]
+            #     [ R^T 0   0 ]   [ uy ]   [by                           ]
+            # 
+            #     W*uz = W^{-T} * ( GG*ux - bz ).
+
+            minor = 0
+            if not helpers.sp_minor_empty():
+                minor = helpers.sp_minor_top()
+
+            # bzp := W^{-T} * bz in packed storage 
+            misc.scale(z, W, trans = 'T', inverse = 'I')
+            misc.pack(z, bzp, dims, mnl)
+            helpers.sp_create("10solve_chol", minor)
+
+            # x := [Q1, Q2]' * (x + Gs' * bzp)
+            #    = [Q1, Q2]' * (bx + Gs' * W^{-T} * bz)
+            blas.gemv(Gs, bzp, x, beta = 1.0, trans = 'T', m = cdim_pckd)
+            lapack.ormqr(QA, tauA, x, side = 'L', trans = 'T')
+            helpers.sp_create("20solve_chol", minor)
+
+            # y := x[:p] 
+            #    = Q1' * (bx + Gs' * W^{-T} * bz)
+            blas.copy(y, yy)
+            blas.copy(x, y, n = p)
+
+            # x[:p] := v = R^{-T} * by 
+            blas.copy(yy, x)
+            lapack.trtrs(QA, x, uplo = 'U', trans = 'T', n = p)
+            helpers.sp_create("30solve_chol", minor)
+
+            # x[p:] := K22^{-1} * (x[p:] - K21*x[:p])
+            #        = K22^{-1} * (Q2' * (bx + Gs' * W^{-T} * bz) - K21*v)
+            blas.gemv(K, x, x, alpha = -1.0, beta = 1.0, m = n-p, n = p,
+                offsetA = p, offsety = p)
+            lapack.potrs(K, x, n = n-p, offsetA = p*(n+1), offsetB = p)
+            helpers.sp_create("40solve_chol", minor)
+
+            # y := y - [K11, K12] * x
+            #    = Q1' * (bx + Gs' * W^{-T} * bz) - K11*v - K12*w
+            blas.gemv(K, x, y, alpha = -1.0, beta = 1.0, m = p, n = n)
+            helpers.sp_create("50solve_chol", minor)
+
+            # y := R^{-1}*y
+            #    = R^{-1} * (Q1' * (bx + Gs' * W^{-T} * bz) - K11*v 
+            #      - K12*w)
+            lapack.trtrs(QA, y, uplo = 'U', n = p)
+            helpers.sp_create("60solve_chol", minor)
+           
+            # x := [Q1, Q2] * x
+            lapack.ormqr(QA, tauA, x, side = 'L')
+            helpers.sp_create("70solve_chol", minor)
+
+            # bzp := Gs * x - bzp.
+            #      = W^{-T} * ( GG*ux - bz ) in packed storage.
+            # Unpack and copy to z.
+            blas.gemv(Gs, x, bzp, alpha = 1.0, beta = -1.0, m = cdim_pckd)
+            misc.unpack(bzp, z, dims, mnl)
+            helpers.sp_create("90solve_chol", minor)
+
+        return solve
+
+    return factor
+
+
+
+
+
+
+
+
+
+def kkt_chol2(G, dims, A, mnl = 0):
+    """
+    """
+
+    if dims['q'] or dims['s']:
+        raise ValueError("kktsolver option 'kkt_chol2' is implemented "\
+            "only for problems with no second-order or semidefinite cone "\
+            "constraints")
+    p, n = A.size
+    ml = dims['l']
+    F = {'firstcall': True, 'singular': False}
+
+    def factor(W, H = None, Df = None):
+
+        minor = 0
+        if not helpers.sp_minor_empty():
+            minor = helpers.sp_minor_top()
+
+        if F['firstcall']:
+            if type(G) is matrix: 
+                F['Gs'] = matrix(0.0, G.size) 
+                helpers.sp_add_var("Gs", F['Gs'])
+            else:
+                F['Gs'] = spmatrix(0.0, G.I, G.J, G.size) 
+            if mnl:
+                if type(Df) is matrix:
+                    F['Dfs'] = matrix(0.0, Df.size) 
+                    helpers.sp_add_var("Dfs", F['Dfs'])
+                else: 
+                    F['Dfs'] = spmatrix(0.0, Df.I, Df.J, Df.size) 
+            if (mnl and type(Df) is matrix) or type(G) is matrix or \
+                type(H) is matrix:
+                F['S'] = matrix(0.0, (n,n))
+                F['K'] = matrix(0.0, (p,p))
+                helpers.sp_add_var("S", F['S'])
+                helpers.sp_add_var("K", F['K'])
+            else:
+                F['S'] = spmatrix([], [], [], (n,n), 'd')
+                F['Sf'] = None
+                if type(A) is matrix:
+                    F['K'] = matrix(0.0, (p,p))
+                else:
+                    F['K'] = spmatrix([], [], [], (p,p), 'd')
+
+        # Dfs = Wnl^{-1} * Df 
+        if mnl: base.gemm(spmatrix(W['dnli'], list(range(mnl)), 
+            list(range(mnl))), Df, F['Dfs'], partial = True)
+
+        helpers.sp_create("02factor_chol2", minor)
+        # Gs = Wl^{-1} * G.
+        di = spmatrix(W['di'], list(range(ml)), list(range(ml)))
+        #print "di %d, %d:\n" %(di.size[0], di.size[1]), di
+        #print "G  %d, %d:\n"%(G.size[0], G.size[1]), G
+        base.gemm(di, G, F['Gs'], partial = True)
+
+        helpers.sp_create("06factor_chol2", minor)
+
+        if F['firstcall']:
+            #print "Gs  %d, %d:\n"%(F['Gs'].size[0], F['Gs'].size[1]), F['Gs']
+            base.syrk(F['Gs'], F['S'], trans = 'T') 
+            if mnl: 
+                base.syrk(F['Dfs'], F['S'], trans = 'T', beta = 1.0)
+            if H is not None: 
+                F['S'] += H
+            helpers.sp_create("10factor_chol2", minor)
+            try:
+                if type(F['S']) is matrix: 
+                    lapack.potrf(F['S']) 
+                else:
+                    F['Sf'] = cholmod.symbolic(F['S'])
+                    cholmod.numeric(F['S'], F['Sf'])
+            except ArithmeticError:
+                print "ArithmeticError happened ..."
+                F['singular'] = True 
+                if type(A) is matrix and type(F['S']) is spmatrix:
+                    F['S'] = matrix(0.0, (n,n))
+                    helpers.sp_add_var("S", F['S'])
+                base.syrk(F['Gs'], F['S'], trans = 'T') 
+                if mnl:
+                    base.syrk(F['Dfs'], F['S'], trans = 'T', beta = 1.0)
+                helpers.sp_create("14factor_chol2", minor)
+                base.syrk(A, F['S'], trans = 'T', beta = 1.0) 
+                helpers.sp_create("16factor_chol2", minor)
+                if H is not None:
+                    F['S'] += H
+                helpers.sp_create("18factor_chol2", minor)
+                if type(F['S']) is matrix: 
+                    lapack.potrf(F['S']) 
+                else:
+                    F['Sf'] = cholmod.symbolic(F['S'])
+                    cholmod.numeric(F['S'], F['Sf'])
+            F['firstcall'] = False
+            helpers.sp_create("20factor_chol2", minor)
+
+        else:
+            helpers.sp_create("25factor_chol2", minor)
+            base.syrk(F['Gs'], F['S'], trans = 'T', partial = True)
+            helpers.sp_create("30factor_chol2", minor)
+            if mnl: base.syrk(F['Dfs'], F['S'], trans = 'T', beta = 1.0, 
+                partial = True)
+            if H is not None:
+                F['S'] += H
+            helpers.sp_create("40factor_chol2", minor)
+            if F['singular']:
+                base.syrk(A, F['S'], trans = 'T', beta = 1.0, partial = 
+                    True) 
+            if type(F['S']) is matrix: 
+                lapack.potrf(F['S']) 
+            else:
+                cholmod.numeric(F['S'], F['Sf'])
+            helpers.sp_create("50factor_chol2", minor)
+
+        if type(F['S']) is matrix: 
+            # Asct := L^{-1}*A'.  Factor K = Asct'*Asct.
+            if type(A) is matrix: 
+                Asct = A.T
+            else: 
+                Asct = matrix(A.T)
+            blas.trsm(F['S'], Asct)
+            helpers.sp_create("80factor_chol2", minor)
+            blas.syrk(Asct, F['K'], trans = 'T')
+            lapack.potrf(F['K'])
+            helpers.sp_create("90factor_chol2", minor)
+            #print "factor: Gs:\n", helpers.str2(F['Gs'], "%.7f")
+            #print "factor: S:\n", helpers.str2(F['S'], "%.7f")
+            #print "factor: K:\n", helpers.str2(F['K'], "%.7f")
+        else:
+            # Asct := L^{-1}*P*A'.  Factor K = Asct'*Asct.
+            if type(A) is matrix:
+                Asct = A.T
+                cholmod.solve(F['Sf'], Asct, sys = 7)
+                cholmod.solve(F['Sf'], Asct, sys = 4)
+                blas.syrk(Asct, F['K'], trans = 'T')
+                lapack.potrf(F['K']) 
+            else:
+                Asct = cholmod.spsolve(F['Sf'], A.T, sys = 7)
+                Asct = cholmod.spsolve(F['Sf'], Asct, sys = 4)
+                base.syrk(Asct, F['K'], trans = 'T')
+                Kf = cholmod.symbolic(F['K'])
+                cholmod.numeric(F['K'], Kf)
+
+        def solve(x, y, z):
+
+            # Solve
+            #
+            #     [ H          A'  GG'*W^{-1} ]   [ ux   ]   [ bx        ]
+            #     [ A          0   0          ] * [ uy   ] = [ by        ]
+            #     [ W^{-T}*GG  0   -I         ]   [ W*uz ]   [ W^{-T}*bz ]
+            #
+            # and return ux, uy, W*uz.
+            #
+            # If not F['singular']:
+            #
+            #     K*uy = A * S^{-1} * ( bx + GG'*W^{-1}*W^{-T}*bz ) - by
+            #     S*ux = bx + GG'*W^{-1}*W^{-T}*bz - A'*uy
+            #     W*uz = W^{-T} * ( GG*ux - bz ).
+            #    
+            # If F['singular']:
+            #
+            #     K*uy = A * S^{-1} * ( bx + GG'*W^{-1}*W^{-T}*bz + A'*by )
+            #            - by
+            #     S*ux = bx + GG'*W^{-1}*W^{-T}*bz + A'*by - A'*y.
+            #     W*uz = W^{-T} * ( GG*ux - bz ).
+
+            #print "chol2 solver ..."
+            minor = 0
+            if not helpers.sp_minor_empty():
+                minor = helpers.sp_minor_top()
+
+            # z := W^{-1} * z = W^{-1} * bz
+            scale(z, W, trans = 'T', inverse = 'I') 
+
+            helpers.sp_create("10solve_chol2", minor)
+            # If not F['singular']:
+            #     x := L^{-1} * P * (x + GGs'*z)
+            #        = L^{-1} * P * (x + GG'*W^{-1}*W^{-T}*bz)
+            #
+            # If F['singular']:
+            #     x := L^{-1} * P * (x + GGs'*z + A'*y))
+            #        = L^{-1} * P * (x + GG'*W^{-1}*W^{-T}*bz + A'*y)
+
+            if mnl:
+                base.gemv(F['Dfs'], z, x, trans = 'T', beta = 1.0)
+            base.gemv(F['Gs'], z, x, offsetx = mnl, trans = 'T', beta = 1.0)
+            helpers.sp_create("20solve_chol2", minor)
+            if F['singular']:
+                base.gemv(A, y, x, trans = 'T', beta = 1.0)
+            helpers.sp_create("30solve_chol2", minor)
+            if type(F['S']) is matrix:
+                blas.trsv(F['S'], x)
+            else:
+                cholmod.solve(F['Sf'], x, sys = 7)
+                cholmod.solve(F['Sf'], x, sys = 4)
+
+            helpers.sp_create("50solve_chol2", minor)
+
+            # y := K^{-1} * (Asc*x - y)
+            #    = K^{-1} * (A * S^{-1} * (bx + GG'*W^{-1}*W^{-T}*bz) - by)
+            #      (if not F['singular'])
+            #    = K^{-1} * (A * S^{-1} * (bx + GG'*W^{-1}*W^{-T}*bz + 
+            #      A'*by) - by)  
+            #      (if F['singular']).
+
+            base.gemv(Asct, x, y, trans = 'T', beta = -1.0)
+            helpers.sp_create("55solve_chol2", minor)
+            if type(F['K']) is matrix:
+                lapack.potrs(F['K'], y)
+            else:
+                cholmod.solve(Kf, y)
+            helpers.sp_create("60solve_chol2", minor)
+
+            # x := P' * L^{-T} * (x - Asc'*y)
+            #    = S^{-1} * (bx + GG'*W^{-1}*W^{-T}*bz - A'*y) 
+            #      (if not F['singular'])  
+            #    = S^{-1} * (bx + GG'*W^{-1}*W^{-T}*bz + A'*by - A'*y) 
+            #      (if F['singular'])
+
+            base.gemv(Asct, y, x, alpha = -1.0, beta = 1.0)
+            if type(F['S']) is matrix:
+                blas.trsv(F['S'], x, trans='T')
+            else:
+                cholmod.solve(F['Sf'], x, sys = 5)
+                cholmod.solve(F['Sf'], x, sys = 8)
+            helpers.sp_create("70solve_chol2", minor)
+
+            # W*z := GGs*x - z = W^{-T} * (GG*x - bz)
+            if mnl:
+                base.gemv(F['Dfs'], x, z, beta = -1.0)
+            base.gemv(F['Gs'], x, z, beta = -1.0, offsety = mnl)
+            helpers.sp_create("90solve_chol2", minor)
+
+        return solve
+
+    return factor

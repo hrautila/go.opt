@@ -3,7 +3,7 @@
 
 import sys
 from cvxopt import matrix, log, div, spdiag 
-#from cvxopt import solvers  
+from cvxopt import solvers  
 import localcvx, helpers
  
 def F(x = None, z = None):  
@@ -29,19 +29,21 @@ def testcp(opts):
           [1.0, 0.0, 0.0, 0.0, 20., 10., 40., 10., 80., 10., 40., 10., 15.])  
      dims = {'l': 0, 'q': [4], 's':  [3]}  
      if opts:
-          localcvx.options.update(opts)
-     sol = localcvx.cp(F, G, h, dims)  
+          solvers.options.update(opts)
+     sol = solvers.cp(F, G, h, dims)  
+     #sol = localcvx.cp(F, G, h, dims)  
      if sol['status'] == 'optimal':
           print("\nx = \n") 
           print helpers.strSpe(sol['x'], "%.17f")
           print helpers.strSpe(sol['znl'], "%.17f")
           print "\n *** running GO test ***"
-          #helpers.run_go_test("../testcp", {'x': sol['x']})
+          helpers.run_go_test("../testcp", {'x': sol['x']})
 
 
 if len(sys.argv[1:]) > 0:
+     # if using this use localcvx.cp  instead of solvers.cp
      if sys.argv[1] == '-sp':
-          helpers.sp_reset("./sp.cp")
+          helpers.sp_reset("./sp.data")
           helpers.sp_activate()
 
 testcp({'maxiters':30})
