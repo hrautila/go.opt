@@ -16,8 +16,16 @@ import (
 )
 
 var xVal string
+var spPath string
+var maxIter int
+var spVerbose bool
+var solver string
 
 func init() {
+	flag.BoolVar(&spVerbose, "V", false, "Savepoint verbose reporting.")
+	flag.IntVar(&maxIter, "N", -1, "Max number of iterations.")
+	flag.StringVar(&spPath, "sp", "", "savepoint directory")
+	flag.StringVar(&solver, "solver", "", "Solver name")
 	flag.StringVar(&xVal, "x", "", "Reference value for X")
 }
 	
@@ -192,6 +200,12 @@ func floorplan(Amin *matrix.FloatMatrix) *matrix.FloatMatrix {
 	var solopts cvx.SolverOptions
 	solopts.MaxIter = 50
 	solopts.ShowProgress = true
+	if maxIter > 0 {
+		solopts.MaxIter = maxIter
+	}
+	if len(solver) > 0 {
+		solopts.KKTSolverName = solver
+	}
 
 	sol, err := cvx.Cpl(F, c, G, h, nil, nil, dims, &solopts)
 	if err == nil && sol.Status == cvx.Optimal {
@@ -204,7 +218,6 @@ func floorplan(Amin *matrix.FloatMatrix) *matrix.FloatMatrix {
 
 func main() {
 	flag.Parse()
-	reftest := flag.NFlag() > 0
 
 	x := floorplan(matrix.FloatWithValue(5, 1, 100.0))
 	if x != nil {
@@ -219,9 +232,7 @@ func main() {
 		fmt.Printf("y = \n%v\n", ys.ToString("%.5f"))
 		fmt.Printf("w = \n%v\n", ws.ToString("%.5f"))
 		fmt.Printf("h = \n%v\n", hs.ToString("%.5f"))
-		if reftest {
-			check(x)
-		}
+		check(x)
 	}
 }
 

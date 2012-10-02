@@ -18,11 +18,13 @@ var xVal string
 var spPath string
 var spVerbose bool
 var maxIter int
+var solver string
 
 func init() {
 	flag.BoolVar(&spVerbose, "V", false, "Savepoint verbose reporting.")
 	flag.IntVar(&maxIter, "N", -1, "Max number of iterations.")
 	flag.StringVar(&spPath, "sp", "", "savepoint directory")
+	flag.StringVar(&solver, "solver", "", "Solver name")
 	flag.StringVar(&xVal, "x", "", "Reference value for X")
 }
 	
@@ -76,6 +78,12 @@ func main() {
 		checkpnt.Format("%.7f")
 	}
 	solopts.ShowProgress = true
+	if maxIter > 0 {
+		solopts.MaxIter = maxIter
+	}
+	if len(solver) > 0 {
+		solopts.KKTSolverName = solver
+	}
 	sol, err := cvx.Gp(K, F, g, nil, nil, nil, nil, &solopts)
 	if sol != nil && sol.Status == cvx.Optimal {
 		x := sol.Result.At("x")[0]

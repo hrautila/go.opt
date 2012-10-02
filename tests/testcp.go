@@ -21,11 +21,13 @@ var xVal string
 var spPath string
 var spVerbose bool
 var maxIter int
+var solver string
 
 func init() {
 	flag.BoolVar(&spVerbose, "V", false, "Savepoint verbose reporting.")
 	flag.IntVar(&maxIter, "N", -1, "Max number of iterations.")
 	flag.StringVar(&spPath, "sp", "", "savepoint directory")
+	flag.StringVar(&solver, "solver", "", "Solver name")
 	flag.StringVar(&xVal, "x", "", "Reference value for X")
 }
 	
@@ -101,10 +103,13 @@ func acenter() *matrix.FloatMatrix {
 	
 	var solopts cvx.SolverOptions
 	solopts.MaxIter = 40
+	solopts.ShowProgress = true
 	if maxIter > -1 {
 		solopts.MaxIter = maxIter
 	}
-	solopts.ShowProgress = true
+	if len(solver) > 0 {
+		solopts.KKTSolverName = solver
+	}
 
 	dims := sets.NewDimensionSet("l", "q", "s")
 	dims.Set("l", []int{0})

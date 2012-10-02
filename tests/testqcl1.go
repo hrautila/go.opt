@@ -21,6 +21,7 @@ var xVal, zVal, AVal, bVal string
 var spPath string
 var maxIter int 
 var spVerbose bool
+var solver string
 
 // helper variables for checkpointing...
 var loopg, loopf int
@@ -29,6 +30,7 @@ func init() {
 	flag.BoolVar(&spVerbose, "V", false, "Savepoint verbose reporting.")
 	flag.IntVar(&maxIter, "N", 30, "Max number of iterations.")
 	flag.StringVar(&spPath, "sp", "", "savepoint directory")
+	flag.StringVar(&solver, "solver", "", "Solver name")
 	flag.StringVar(&xVal, "x", "", "Reference value for X")
 	flag.StringVar(&zVal, "z", "", "Reference value for Z")
 	flag.StringVar(&AVal, "A", "", "Problem data A")
@@ -298,9 +300,14 @@ func qcl1(A, b *matrix.FloatMatrix) (*cvx.Solution, error) {
 	dims.Set("q", []int{m+1})
 
 	var solopts cvx.SolverOptions
-	solopts.MaxIter = maxIter
 	solopts.ShowProgress = true
-	return cvx.ConeLpCustom(c, G, h, nil, nil, dims, Fkkt, &solopts, nil, nil)
+	if maxIter > 0 {
+		solopts.MaxIter = maxIter
+	}
+	if len(solver) > 0 {
+		solopts.KKTSolverName = solver
+	}
+	return cvx.ConeLpCustomMatrix(c, G, h, nil, nil, dims, Fkkt, &solopts, nil, nil)
 }
 
 func main() {

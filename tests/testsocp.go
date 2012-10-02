@@ -15,8 +15,16 @@ import (
 )
 
 var xVal, sq0Val, sq1Val, zq0Val, zq1Val string
+var spPath string
+var maxIter int
+var spVerbose bool
+var solver string
 
 func init() {
+	flag.BoolVar(&spVerbose, "V", false, "Savepoint verbose reporting.")
+	flag.IntVar(&maxIter, "N", -1, "Max number of iterations.")
+	flag.StringVar(&spPath, "sp", "", "savepoint directory")
+	flag.StringVar(&solver, "solver", "", "Solver name")
 	flag.StringVar(&xVal, "x", "", "Reference value for X")
 	flag.StringVar(&sq0Val, "sq0", "", "Reference value for SQ[0]")
 	flag.StringVar(&sq1Val, "sq1", "", "Reference value for SQ[1]")
@@ -101,6 +109,13 @@ func main() {
 	var solopts cvx.SolverOptions
 	solopts.MaxIter = 30
 	solopts.ShowProgress = true
+	if maxIter > -1 {
+		solopts.MaxIter = maxIter
+	}
+	if len(solver) > 0 {
+		solopts.KKTSolverName = solver
+	}
+
 	sol, err := cvx.Socp(c, Gl, hl, A, b, Ghq, &solopts, nil, nil)
 	fmt.Printf("status: %v\n", err)
 	if sol != nil && sol.Status == cvx.Optimal {

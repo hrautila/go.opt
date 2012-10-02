@@ -12,13 +12,22 @@ import (
 	"github.com/hrautila/linalg"
 	"github.com/hrautila/cvx"
 	"github.com/hrautila/cvx/sets"
+	"github.com/hrautila/cvx/checkpnt"
 	"fmt"
 	"flag"
 )
 
 var xVal, zVal, dataVal string
+var spPath string
+var spVerbose bool
+var maxIter int
+var solver string
 
 func init() {
+	flag.BoolVar(&spVerbose, "V", false, "Savepoint verbose reporting.")
+	flag.IntVar(&maxIter, "N", -1, "Max number of iterations.")
+	flag.StringVar(&spPath, "sp", "", "savepoint directory")
+	flag.StringVar(&solver, "solver", "", "Solver name")
 	flag.StringVar(&xVal, "x", "", "Reference value for X")
 	flag.StringVar(&zVal, "z", "", "Reference value for Z")
 	flag.StringVar(&dataVal, "data", "", "Problem data")
@@ -32,7 +41,7 @@ func errorToRef(ref, val *matrix.FloatMatrix) (nrm float64, diff *matrix.FloatMa
 
 func check(x, z *matrix.FloatMatrix) {
 	if len(xVal) > 0 {
-		ref, _ := matrix.FloatParseSpe(xVal)
+		ref, _ := matrix.FloatParse(xVal)
 		nrm, diff := errorToRef(ref, x)
 		fmt.Printf("x: nrm=%.9f\n", nrm)
 		if nrm > 10e-7 {
@@ -40,7 +49,7 @@ func check(x, z *matrix.FloatMatrix) {
 		}
 	}
 	if len(zVal) > 0 {
-		ref, _ := matrix.FloatParseSpe(zVal)
+		ref, _ := matrix.FloatParse(zVal)
 		nrm, diff := errorToRef(ref, z)
 		fmt.Printf("z: nrm=%.9f\n", nrm)
 		if nrm > 10e-7 {
@@ -188,11 +197,16 @@ func mcsdp(w *matrix.FloatMatrix) (*cvx.Solution, error) {
 	dualstart.Set("z", z0)
 
 	var solopts cvx.SolverOptions
-	solopts.MaxIter = 30
 	solopts.ShowProgress = true
+	if maxIter > 0 {
+		solopts.MaxIter = maxIter
+	}
+	if len(solver) > 0 {
+		solopts.KKTSolverName = solver
+	}
 	h := w.Copy()
 	matrix.Reshape(h, h.NumElements(), 1)
-	return cvx.ConeLpCustom(c, G, h, nil, nil, dims, Fkkt, &solopts, primalstart, dualstart)
+	return cvx.ConeLpCustomMatrix(c, G, h, nil, nil, dims, Fkkt, &solopts, primalstart, dualstart)
 }
 
 func main() {
@@ -206,6 +220,13 @@ func main() {
 		}
 	} else {
 		data = matrix.FloatNormal(20, 20)
+	}
+
+	if len(spPath) > 0 {
+		checkpnt.Reset(spPath)
+		checkpnt.Activate()
+		checkpnt.Verbose(spVerbose)
+		checkpnt.Format("%.7f")
 	}
 
 	sol, err := mcsdp(data)

@@ -20,11 +20,13 @@ var xVal, ss0Val, ss1Val, zs0Val, zs1Val string
 var spPath string
 var maxIter int 
 var spVerbose bool
+var solver string
 
 func init() {
 	flag.BoolVar(&spVerbose, "V", false, "Savepoint verbose reporting.")
 	flag.IntVar(&maxIter, "N", -1, "Max number of iterations.")
 	flag.StringVar(&spPath, "sp", "", "savepoint directory")
+	flag.StringVar(&solver, "solver", "", "Solver name")
 	flag.StringVar(&xVal, "x", "", "Reference value for X")
 	flag.StringVar(&ss0Val, "ss0", "", "Reference value for SQ[0]")
 	flag.StringVar(&ss1Val, "ss1", "", "Reference value for SQ[1]")
@@ -123,10 +125,14 @@ func main() {
 	var Gs, hs, A, b *matrix.FloatMatrix = nil, nil, nil, nil
 	var solopts cvx.SolverOptions
 	solopts.MaxIter = 30
-	if maxIter > 0 {
+	solopts.ShowProgress = true
+	if maxIter > -1 {
 		solopts.MaxIter = maxIter
 	}
-	solopts.ShowProgress = true
+	if len(solver) > 0 {
+		solopts.KKTSolverName = solver
+	}
+
 	sol, err := cvx.Sdp(c, Gs, hs, A, b, Ghs, &solopts, nil, nil)
 	if sol != nil && sol.Status == cvx.Optimal {
 		x := sol.Result.At("x")[0]

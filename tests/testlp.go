@@ -9,13 +9,22 @@ import (
 	"github.com/hrautila/matrix"
 	"github.com/hrautila/linalg/blas"
 	"github.com/hrautila/cvx"
+	"github.com/hrautila/cvx/checkpnt"
 	"fmt"
 	"flag"
 )
 
 var xVal, sVal, zVal string
+var spPath string
+var maxIter int
+var spVerbose bool
+var solver string
 
 func init() {
+	flag.BoolVar(&spVerbose, "V", false, "Savepoint verbose reporting.")
+	flag.IntVar(&maxIter, "N", -1, "Max number of iterations.")
+	flag.StringVar(&spPath, "sp", "", "savepoint directory")
+	flag.StringVar(&solver, "solver", "", "Solver name")
 	flag.StringVar(&xVal, "x", "", "Reference value for X")
 	flag.StringVar(&sVal, "s", "", "Reference value for S")
 	flag.StringVar(&zVal, "z", "", "Reference value for Z")
@@ -56,7 +65,12 @@ func check(x, s, z *matrix.FloatMatrix) {
 
 func main() {
 	flag.Parse()
-	reftest := flag.NFlag() > 0
+	if len(spPath) > 0 {
+		checkpnt.Reset(spPath)
+		checkpnt.Activate()
+		checkpnt.Verbose(spVerbose)
+		checkpnt.Format("%.17f")
+	}
 
 	gdata := [][]float64{
 		[]float64{ 2.0, 1.0, -1.0,  0.0 },
@@ -69,6 +83,12 @@ func main() {
 	var solopts cvx.SolverOptions
 	solopts.MaxIter = 30
 	solopts.ShowProgress = true
+	if maxIter > -1 {
+		solopts.MaxIter = maxIter
+	}
+	if len(solver) > 0 {
+		solopts.KKTSolverName = solver
+	}
 	sol, err := cvx.Lp(c, G, h, nil, nil, &solopts, nil, nil)
 	if sol != nil && sol.Status == cvx.Optimal {
 		x := sol.Result.At("x")[0]
@@ -77,9 +97,7 @@ func main() {
 		fmt.Printf("x=\n%v\n", x.ToString("%.9f"))
 		fmt.Printf("s=\n%v\n", s.ToString("%.9f"))
 		fmt.Printf("z=\n%v\n", z.ToString("%.9f"))
-		if reftest {
-			check(x, s, z)
-		}
+		check(x, s, z)
 	} else {
 		fmt.Printf("status: %v\n", err)
 	}
