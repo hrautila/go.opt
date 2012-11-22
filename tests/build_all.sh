@@ -1,6 +1,6 @@
 #!/bin/bash
 
-NAMES="conelp coneqp cp cpl gp lp qp socp sdp mcsdp qcl1"
+NAMES="conelp coneqp cp cpl gp lp qp socp sdp mcsdp qcl1 simple"
 
 for N in $NAMES
 do
