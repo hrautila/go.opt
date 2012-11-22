@@ -8,7 +8,7 @@ import helpers
 import localcones
 
 
-def testsdp(opts, chkpoints):
+def testsdp(opts):
     c = matrix([1.,-1.,1.])  
     G = [ matrix([[-7., -11., -11., 3.],  
                   [ 7., -18., -18., 8.],  

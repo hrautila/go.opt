@@ -16,7 +16,7 @@ def testlp(opts):
     print"s = \n", helpers.str2(sol['s'], "%.9f")
     print"z = \n", helpers.str2(sol['z'], "%.9f")
     print "\n *** running GO test ***"
-    #helpers.run_go_test("../testlp", {'x': sol['x'], 's': sol['s'], 'z': sol['z']})
+    helpers.run_go_test("../testlp", {'x': sol['x'], 's': sol['s'], 'z': sol['z']})
 
 
 if len(sys.argv[1:]) > 0:
