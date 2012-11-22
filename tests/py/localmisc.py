@@ -1589,7 +1589,7 @@ def kkt_chol2(G, dims, A, mnl = 0):
             #     S*ux = bx + GG'*W^{-1}*W^{-T}*bz + A'*by - A'*y.
             #     W*uz = W^{-T} * ( GG*ux - bz ).
 
-            #print "chol2 solver ..."
+            #print "chol2 solver [start]...\n", str(x)
             minor = 0
             if not helpers.sp_minor_empty():
                 minor = helpers.sp_minor_top()
@@ -1612,6 +1612,7 @@ def kkt_chol2(G, dims, A, mnl = 0):
             helpers.sp_create("20solve_chol2", minor)
             if F['singular']:
                 base.gemv(A, y, x, trans = 'T', beta = 1.0)
+                
             helpers.sp_create("30solve_chol2", minor)
             if type(F['S']) is matrix:
                 blas.trsv(F['S'], x)
@@ -1643,6 +1644,7 @@ def kkt_chol2(G, dims, A, mnl = 0):
             #      (if F['singular'])
 
             base.gemv(Asct, y, x, alpha = -1.0, beta = 1.0)
+            helpers.sp_create("65solve_chol2", minor)
             if type(F['S']) is matrix:
                 blas.trsv(F['S'], x, trans='T')
             else:
@@ -1655,6 +1657,7 @@ def kkt_chol2(G, dims, A, mnl = 0):
                 base.gemv(F['Dfs'], x, z, beta = -1.0)
             base.gemv(F['Gs'], x, z, beta = -1.0, offsety = mnl)
             helpers.sp_create("90solve_chol2", minor)
+            #print "chol2 solver [end]...\n", str(x)
 
         return solve
 

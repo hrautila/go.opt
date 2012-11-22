@@ -296,6 +296,7 @@ def conelp(c, G, h, dims = None, A = None, b = None, primalstart = None,
     helpers.sp_add_var("dx", dx)
     helpers.sp_add_var("ds", ds)
     helpers.sp_add_var("dz", dz)
+    helpers.sp_create("00init", 1)
 
     if primalstart is None or dualstart is None:
 
@@ -318,7 +319,9 @@ def conelp(c, G, h, dims = None, A = None, b = None, primalstart = None,
         try: f = kktsolver(W)
         except ArithmeticError:  
             raise ValueError("Rank(A) < p or Rank([G; A]) < n")
-
+        helpers.sp_add_var("W", W)
+        
+    helpers.sp_create("05init", 5)
     if primalstart is None:
 
         # minimize    || G * x - h ||^2
@@ -330,6 +333,7 @@ def conelp(c, G, h, dims = None, A = None, b = None, primalstart = None,
         #     [ A   0   0  ] * [ dy ] = [ b ].
         #     [ G   0  -I  ]   [ -s ]   [ h ]
 
+        helpers.sp_minor_push(5)
         xscal(0.0, x)
         ycopy(b, dy)  
         blas.copy(h, s)
@@ -337,7 +341,8 @@ def conelp(c, G, h, dims = None, A = None, b = None, primalstart = None,
         except ArithmeticError:  
             raise ValueError("Rank(A) < p or Rank([G; A]) < n")
         blas.scal(-1.0, s)  
-        #print "** initial s=\n", helpers.str2(s, "%.5f")
+        helpers.sp_minor_pop()
+        print "** initial s=\n", helpers.str2(s, "%.5f")
     else:
         xcopy(primalstart['x'], x)
         blas.copy(primalstart['s'], s)
@@ -348,6 +353,7 @@ def conelp(c, G, h, dims = None, A = None, b = None, primalstart = None,
     if ts >= 0 and primalstart: 
         raise ValueError("initial s is not positive")
 
+    helpers.sp_create("10init", 10)
 
     if dualstart is None:
 
@@ -360,6 +366,7 @@ def conelp(c, G, h, dims = None, A = None, b = None, primalstart = None,
         #     [ A   0   0  ] [ y  ] = [  0 ].
         #     [ G   0  -I  ] [ z  ]   [  0 ]
 
+        helpers.sp_minor_push(10)
         xcopy(c, dx); 
         xscal(-1.0, dx)
         yscal(0.0, y)
@@ -370,6 +377,7 @@ def conelp(c, G, h, dims = None, A = None, b = None, primalstart = None,
 
         #print "initial z=\n", helpers.str2(z, "%.5f")
         #print "** initial z=\n", z 
+        helpers.sp_minor_pop()
     else:
         if 'y' in dualstart: ycopy(dualstart['y'], y)
         blas.copy(dualstart['z'], z)
@@ -384,6 +392,7 @@ def conelp(c, G, h, dims = None, A = None, b = None, primalstart = None,
     nrmz = misc.snrm2(z, dims)
     #print "** nrms=%.17f nrmz=%.17f" %(nrms, nrmz)
     #print "** ts  =%.17f tz  =%.17f" %(ts, tz)
+    helpers.sp_create("20init", 0)
 
     if primalstart is None and dualstart is None: 
 
@@ -403,6 +412,7 @@ def conelp(c, G, h, dims = None, A = None, b = None, primalstart = None,
             # The initial points we constructed happen to be feasible and 
             # optimal.  
 
+            print "initial points feasible ..."
             ind = dims['l'] + sum(dims['q'])
             for m in dims['s']:
                 misc.symm(s, m, ind)
