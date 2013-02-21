@@ -58,7 +58,7 @@ func (p *floorPlan) F0() (mnl int, x0 *matrix.FloatMatrix, err error) {
     mnl = 5
     x0 = matrix.FloatZeros(22, 1)
     // set last 5 elements to 1.0
-    x0.Set(1.0, -1, -2, -3, -4, -5)
+    x0.SetIndexes(1.0, -1, -2, -3, -4, -5)
     return
 }
 
@@ -75,7 +75,7 @@ func (p *floorPlan) F1(x *matrix.FloatMatrix) (f, Df *matrix.FloatMatrix, err er
     x17 := matrix.FloatVector(x.FloatArray()[17:])
     // -( Amin ./ (x17 .* x17) )
     diag := matrix.Div(p.Amin, matrix.Mul(x17, x17)).Scale(-1.0)
-    dk2.SetIndexes(matrix.MakeDiagonalSet(5), diag.FloatArray())
+    dk2.SetIndexesFromArray(diag.FloatArray(), matrix.MakeDiagonalSet(5)...)
     Df, _ = matrix.FloatMatrixStacked(matrix.StackRight, zeros, dk1, dk2)
 
     x12 := matrix.FloatVector(x.FloatArray()[12:17])
@@ -217,8 +217,8 @@ func main() {
 
     x := floorplan(matrix.FloatWithValue(5, 1, 100.0))
     if x != nil {
-        W := x.Get(0)
-        H := x.Get(1)
+        W := x.GetIndex(0)
+        H := x.GetIndex(1)
         xs := matrix.FloatVector(x.FloatArray()[2:7])
         ys := matrix.FloatVector(x.FloatArray()[7:12])
         ws := matrix.FloatVector(x.FloatArray()[12:17])

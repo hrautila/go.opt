@@ -162,6 +162,10 @@ func plotData(name string, us, ys, ts, fs []float64) {
     }
 }
 
+func column(m *matrix.FloatMatrix, col int) *matrix.FloatMatrix {
+	return m.SubMatrix(0, col, m.Rows(), 1)
+}
+
 func main() {
     flag.Parse()
 
@@ -177,9 +181,10 @@ func main() {
 
     P := matrix.FloatZeros(nvars, nvars)
     // set m first diagonal indexes to 1.0
-    P.Set(1.0, matrix.DiagonalIndexes(P)[:m]...)
+    //P.SetIndexes(1.0, matrix.DiagonalIndexes(P)[:m]...)
+	P.Diag().SubMatrix(0, 0, 1, m).SetIndexes(1.0)
     q := matrix.FloatZeros(nvars, 1)
-    q.SetSubMatrix(0, 0, matrix.Scale(y, -1.0))
+    q.SubMatrix(0, 0, y.NumElements(), 1).Plus(matrix.Scale(y, -1.0))
 
     // m blocks (i = 0,...,m-1) of linear inequalities 
     //
@@ -190,14 +195,20 @@ func main() {
 
     for i := 0; i < m; i++ {
         // coefficients of yhat[i] (column i)
-        G.Set(1.0, matrix.ColumnIndexes(G, i)[i*m:(i+1)*m]...)
+        //G.Set(1.0, matrix.ColumnIndexes(G, i)[i*m:(i+1)*m]...)
+		column(G, i).SetIndexes(1.0)
 
         // coefficients of gi[i] (column i, rows i*m ... (i+1)*m)
-        rows := matrix.Indexes(i*m, (i+1)*m)
-        G.SetAtColumnArray(m+i, rows, matrix.Add(u, -u.GetIndex(i)).FloatArray())
+        //rows := matrix.Indexes(i*m, (i+1)*m)
+        //G.SetAtColumnArray(m+i, rows, matrix.Add(u, -u.GetIndex(i)).FloatArray())
+
+        // coefficients of gi[i] (column i, rows i*m ... (i+1)*m)
+		// from column m+i staring at row i*m select m rows and one column 
+		G.SubMatrix(i*m, m+i, m, 1).Plus(matrix.Add(u, -u.GetIndex(i)))
 
         // coeffients of yhat[i]) from rows i*m ... (i+1)*m, cols 0 ... m
-        G.SetSubMatrix(i*m, 0, matrix.Minus(G.GetSubMatrix(i*m, 0, m, m), I))
+        //G.SetSubMatrix(i*m, 0, matrix.Minus(G.GetSubMatrix(i*m, 0, m, m), I))
+		G.SubMatrix(i*m, 0, m, m).Minus(I)
     }
 
     h := matrix.FloatZeros(m*m, 1)
@@ -216,8 +227,10 @@ func main() {
         return
     }
     x := sol.Result.At("x")[0]
-    yhat := matrix.FloatVector(x.FloatArray()[:m])
-    g := matrix.FloatVector(x.FloatArray()[m:])
+    //yhat := matrix.FloatVector(x.FloatArray()[:m])
+    //g := matrix.FloatVector(x.FloatArray()[m:])
+	yhat := x.SubMatrix(0, 0, m, 1).Copy()
+	g := x.SubMatrix(m, 0).Copy()
 
     rangeFunc := func(n int) []float64 {
         r := make([]float64, 0)
