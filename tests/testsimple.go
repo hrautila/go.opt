@@ -71,19 +71,19 @@ func main() {
         checkpnt.Format("%.17f")
     }
 
-	A := matrix.FloatNew(2, 3, []float64{1.0, -1.0, 0.0, 1.0, 0.0, 1.0})
-	b := matrix.FloatNew(2, 1, []float64{1.0, 0.0})
-	c := matrix.FloatNew(3, 1, []float64{0.0, 1.0, 0.0})
-	G := matrix.FloatNew(1, 3, []float64{0.0, -1.0, 1.0})
-	h := matrix.FloatNew(1, 1, []float64{0.0})
-	//dims := sets.NewDimensionSet("l", "q", "s")
-	//dims.Set("l", []int{1})
+    A := matrix.FloatNew(2, 3, []float64{1.0, -1.0, 0.0, 1.0, 0.0, 1.0})
+    b := matrix.FloatNew(2, 1, []float64{1.0, 0.0})
+    c := matrix.FloatNew(3, 1, []float64{0.0, 1.0, 0.0})
+    G := matrix.FloatNew(1, 3, []float64{0.0, -1.0, 1.0})
+    h := matrix.FloatNew(1, 1, []float64{0.0})
+    //dims := sets.NewDimensionSet("l", "q", "s")
+    //dims.Set("l", []int{1})
 
-	fmt.Printf("A=\n%v\n", A)
-	fmt.Printf("b=\n%v\n", b)
-	fmt.Printf("G=\n%v\n", G)
-	fmt.Printf("h=\n%v\n", h)
-	fmt.Printf("c=\n%v\n", c)
+    fmt.Printf("A=\n%v\n", A)
+    fmt.Printf("b=\n%v\n", b)
+    fmt.Printf("G=\n%v\n", G)
+    fmt.Printf("h=\n%v\n", h)
+    fmt.Printf("c=\n%v\n", c)
 
     var solopts cvx.SolverOptions
     solopts.MaxIter = 30
