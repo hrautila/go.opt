@@ -1,5 +1,6 @@
 # The SDP example of section 8.7 (Exploiting structure).
 
+import sys
 from cvxopt import blas, lapack, solvers, matrix, normal
 import helpers
 
@@ -50,6 +51,7 @@ def mcsdp(w):
 
         # x := alpha*(a*r' + r*a') 
         blas.syr2k(r, a, tx, trans = 'T', alpha = alpha)
+
         x[:] = tx[:]
        
 
@@ -81,7 +83,6 @@ def mcsdp(w):
 
             and take z  = -rti' * (diag(x) + bs) * rti.
             """
-
             # tbst := t * zs * t = t * bs * t
             tbst = matrix(z, (n,n))
             cngrnc(t, tbst) 
@@ -97,6 +98,7 @@ def mcsdp(w):
 
             # z := -rti' * z * rti = -rti' * (diag(x) + bs) * rti 
             cngrnc(rti, z, alpha = -1.0)
+
         return f
 
     c = matrix(1.0, (n,1))
@@ -117,12 +119,21 @@ def mcsdp(w):
         primalstart = {'x': x0, 's': s0[:]}, dualstart = {'z': z0[:]})
     return sol['x'], matrix(sol['z'], (n,n))
 
+
 n = 10
 w = normal(n,n)
-x, z = mcsdp(w)
-print "w=\n", helpers.strSpe(w, "%.5f")
-print "x=\n", helpers.strSpe(x, "%.5f")
-print "z=\n", helpers.strSpe(z, "%.5f")
-print "\n *** running GO test ***"
-helpers.run_go_test("../testmcsdp", {'x': x, 'z': z, 'data': w})
+run_go = True
+if len(sys.argv[1:]) > 0:
+    if sys.argv[1] == "-sp":
+        helpers.sp_reset("./sp.data")
+        helpers.sp_activate()
+        run_go = False
 
+x, z = mcsdp(w)
+if run_go:
+    print "\n *** running GO test ***"
+    helpers.run_go_test("../testmcsdp", {'x': x, 'z': z, 'data': w})
+else:
+    print "w ", helpers.strSpe(w, "%.17f")
+    #print "x=\n", helpers.strSpe(x, "%.17f")
+    #print "z=\n", helpers.strSpe(z, "%.17f")

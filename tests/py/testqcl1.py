@@ -103,10 +103,14 @@ def qcl1(A, b):
       
         # S = As'*As + 4 * (W1**2 + W2**2)**-1
         S = As.T * As 
+        helpers.sp_add_var("S", S)
+
         d1, d2 = W['d'][:n], W['d'][n:]       
+
         d = 4.0 * (d1**2 + d2**2)**-1
         S[::n+1] += d
         lapack.potrf(S)
+        helpers.sp_create("00-Fkkt", minor)
 
         def f(x, y, z):
 
@@ -118,7 +122,7 @@ def qcl1(A, b):
                 loopf += 1
                 minor = loopf
             helpers.sp_create("00-f", minor)
-  
+
             # z := - W**-T * z 
             z[:n] = -div( z[:n], d1 )
             z[n:2*n] = -div( z[n:2*n], d2 )
@@ -127,11 +131,10 @@ def qcl1(A, b):
             z[2*n+1:] *= -1.0
             z[2*n:] /= beta
 
-              # x := x - G' * W**-1 * z
+            # x := x - G' * W**-1 * z
             x[:n] -= div(z[:n], d1) - div(z[n:2*n], d2) + As.T * z[-(m+1):]
             x[n:] += div(z[:n], d1) + div(z[n:2*n], d2) 
             helpers.sp_create("15-f", minor)
-
   
             # Solve for x[:n]:
             #
@@ -177,16 +180,18 @@ def rungo(A, b, x, z):
     print "\n ** running Go test ..."
     helpers.run_go_test("../testqcl1", {'x': x, 'z': z, 'A': A, 'b': b})
 
+
+
 setseed()
 #m, n = 100, 100
 m, n = 10, 10
 A, b = normal(m,n), normal(m,1)
 
-no_go = False
+run_go = True
 if len(sys.argv[1:]) > 0 and sys.argv[1] == '-sp':
-    helpers.sp_reset("./sp.qcl1")
+    helpers.sp_reset("./sp.data")
     helpers.sp_activate()
-    no_go = True
+    run_go = False
 
 x, z = qcl1(A, b)
 if x is None:
@@ -197,4 +202,8 @@ else:
     print "x\n", helpers.str2(x, "%.9f")
     print "z\n", helpers.str2(z, "%.9f")
 
-rungo(A, b, x, z)
+if run_go:
+    rungo(A, b, x, z)
+else:
+    print "A ", helpers.strSpe(A)
+    print "b ", helpers.strSpe(b)
